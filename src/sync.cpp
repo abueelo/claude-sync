@@ -29,10 +29,28 @@ std::vector<GlobalPair> global_pairs(const Config& c) {
     };
 }
 
-// Moves a project's directory inside the sync repo, preferring git mv so the
-// memory's history follows it rather than reading as a delete plus an add.
-void move_in_repo(const fs::path& repo, const fs::path& from, const fs::path& to, const Store& base,
-                  SyncReport& report) {
+// Moves a project's memory from its old sync-repo location to its new one.
+//
+// For a plaintext repo this is a directory-level `git mv`, so git records it
+// as a rename and history reads cleanly. An encrypted repo cannot do that:
+// both a file's hashed name and the path sealed inside its ciphertext are
+// derived from the logical prefix, which just changed, so a raw directory
+// move leaves the bytes on disk in the new location but still encrypted under
+// the old prefix -- unreadable there, and indistinguishable from a delete on
+// the next read. Each file has to be decrypted under the old prefix and
+// re-sealed under the new one instead. Git then sees a delete plus an add
+// rather than a rename, which is an honest reflection of the ciphertext
+// actually changing, not a shortcoming of the move.
+void move_in_repo(const fs::path& repo, const std::string& oldPrefix, const std::string& newPrefix,
+                  const Store& base, SyncReport& report) {
+    Store oldStore = base;
+    oldStore.prefix = oldPrefix;
+    Store newStore = base;
+    newStore.prefix = newPrefix;
+
+    fs::path from = oldStore.dir_for(repo, oldPrefix);
+    fs::path to = newStore.dir_for(repo, newPrefix);
+
     std::error_code ec;
     if (!fs::is_directory(from, ec)) return;  // nothing recorded under the old id yet
     if (fs::exists(to, ec)) {
@@ -42,16 +60,23 @@ void move_in_repo(const fs::path& repo, const fs::path& from, const fs::path& to
         return;
     }
 
-    fs::create_directories(to.parent_path(), ec);
-
-    auto mv = run_git(repo, {"mv", fs::relative(from, repo, ec).generic_string(),
-                             fs::relative(to, repo, ec).generic_string()});
-    if (!mv.ok()) {
-        // Untracked files have nothing for git mv to move; a plain rename is
-        // equivalent for them.
-        fs::rename(from, to, ec);
+    if (!base.encrypted) {
+        fs::create_directories(to.parent_path(), ec);
+        auto mv = run_git(repo, {"mv", fs::relative(from, repo, ec).generic_string(),
+                                 fs::relative(to, repo, ec).generic_string()});
+        if (!mv.ok()) {
+            // Untracked files have nothing for git mv to move; a plain rename is
+            // equivalent for them.
+            fs::rename(from, to, ec);
+        }
+        return;
     }
-    (void)base;
+
+    auto files = store_read_all(from, oldStore);
+    for (const auto& [name, contents] : files) {
+        store_write(to, newStore, name, contents);
+    }
+    fs::remove_all(from, ec);
 }
 
 std::string commit_message(const SyncStats& s, const std::string& machine,
@@ -172,14 +197,7 @@ SyncStats reconcile(const Config& c, const fs::path& repo, const Store& base, St
             std::string oldPrefix = "projects/" + oldId + "/memory";
 
             if (manifest.relink(*known, p, obs.firstSeen)) {
-                Store from = base;
-                from.prefix = oldPrefix;
-                Store to = base;
-                to.prefix = "projects/" + p.id + "/memory";
-
-                // git mv, so the memory keeps its history across the rename.
-                move_in_repo(repo, from.dir_for(repo, oldPrefix), to.dir_for(repo, to.prefix), base,
-                             report);
+                move_in_repo(repo, oldPrefix, "projects/" + p.id + "/memory", base, report);
 
                 // The baseline is keyed by id, so it has to move with it or the
                 // next compare would look like every file was added at once.
