@@ -8,7 +8,7 @@
 #include <cstdlib>
 #include <sstream>
 
-namespace csync {
+namespace claude_sync {
 namespace {
 
 std::string shell_quote(const std::string& s) {
@@ -48,7 +48,7 @@ GitResult run(const std::string& program, const std::vector<std::string>& args) 
 
     // stderr goes to a temp file so it never contaminates the parsed stdout.
     std::error_code ec;
-    fs::path errfile = fs::temp_directory_path(ec) / ("csync-err-" + std::to_string(::getpid()) +
+    fs::path errfile = fs::temp_directory_path(ec) / ("claude-sync-err-" + std::to_string(::getpid()) +
                                                       "-" + std::to_string(rand()) + ".txt");
 
     std::ostringstream cmd;
@@ -127,4 +127,4 @@ std::string root_commit(const fs::path& root) {
     return last;
 }
 
-}  // namespace csync
+}  // namespace claude_sync

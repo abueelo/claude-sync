@@ -6,7 +6,7 @@
 
 namespace fs = std::filesystem;
 
-namespace csync {
+namespace claude_sync {
 
 struct GitResult {
     int code = -1;
@@ -31,4 +31,4 @@ std::string remote_url(const fs::path& root);
 // Oldest root commit, full 40-char SHA. Empty if the repo has no commits.
 std::string root_commit(const fs::path& root);
 
-}  // namespace csync
+}  // namespace claude_sync

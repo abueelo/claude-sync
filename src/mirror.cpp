@@ -5,7 +5,7 @@
 
 #include "paths.h"
 
-namespace csync {
+namespace claude_sync {
 namespace {
 
 // Relative paths of every regular file under dir, recursively. Dotted files and
@@ -196,4 +196,4 @@ SyncStats sync_dir(const fs::path& localDir, const fs::path& repoDir, FileSet& b
     return stats;
 }
 
-}  // namespace csync
+}  // namespace claude_sync

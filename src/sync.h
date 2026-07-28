@@ -6,7 +6,7 @@
 #include "config.h"
 #include "mirror.h"
 
-namespace csync {
+namespace claude_sync {
 
 struct SyncReport {
     SyncStats stats;
@@ -26,4 +26,4 @@ struct SyncOptions {
 // update the manifest, commit and push.
 SyncReport run_sync(const SyncOptions& opts);
 
-}  // namespace csync
+}  // namespace claude_sync

@@ -11,7 +11,7 @@
 #include "manifest.h"
 #include "paths.h"
 
-namespace csync {
+namespace claude_sync {
 namespace {
 
 // True when manifest.json is the only thing git could not merge. Anything else
@@ -55,7 +55,7 @@ bool resolve_manifest_conflict() {
     return add.ok();
 }
 
-fs::path repo_path() { return csync_dir() / "repo"; }
+fs::path repo_path() { return sync_dir_path() / "repo"; }
 
 bool repo_exists() {
     std::error_code ec;
@@ -78,12 +78,12 @@ bool ensure_repo(const Config& c, std::string& err) {
     }
 
     if (c.remoteUrl.empty()) {
-        err = "no sync remote configured; run 'csync init --remote <url>'";
+        err = "no sync remote configured; run 'claude-sync init --remote <url>'";
         return false;
     }
 
     std::error_code ec;
-    fs::create_directories(csync_dir(), ec);
+    fs::create_directories(sync_dir_path(), ec);
 
     // A half-finished clone would be mistaken for a working repo next run.
     fs::remove_all(repo_path(), ec);
@@ -226,7 +226,7 @@ bool install_merge_driver() {
     if (!fs::is_directory(repo / ".git", ec)) return false;
 
     const std::string attributes =
-        "# Memory files are merged by csync, not by line-based diff.\n"
+        "# Memory files are merged by claude-sync, not by line-based diff.\n"
         "MEMORY.md merge=claude-memory\n"
         "*.md merge=claude-memory\n"
         "manifest.json merge=binary\n";
@@ -246,7 +246,7 @@ bool install_merge_driver() {
     auto set = run_git(repo, {"config", "merge.claude-memory.driver", driver});
     if (!set.ok()) return false;
 
-    run_git(repo, {"config", "merge.claude-memory.name", "csync memory merge"});
+    run_git(repo, {"config", "merge.claude-memory.name", "claude-sync memory merge"});
     return true;
 }
 
@@ -261,7 +261,7 @@ bool create_remote_repo(const std::string& name, std::string& urlOut, std::strin
               "  gh repo create " +
               name +
               " --private --clone=false\n"
-              "then run: csync init --remote <url>";
+              "then run: claude-sync init --remote <url>";
         return false;
     }
 
@@ -275,7 +275,7 @@ bool create_remote_repo(const std::string& name, std::string& urlOut, std::strin
     auto view = run("gh", {"repo", "view", name, "--json", "sshUrl", "-q", ".sshUrl"});
     if (!view.ok() || view.out.empty()) {
         err = "repo was created but its URL could not be read back; set it with "
-              "'csync init --remote <url>'";
+              "'claude-sync init --remote <url>'";
         return false;
     }
 
@@ -283,4 +283,4 @@ bool create_remote_repo(const std::string& name, std::string& urlOut, std::strin
     return true;
 }
 
-}  // namespace csync
+}  // namespace claude_sync

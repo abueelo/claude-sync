@@ -5,9 +5,9 @@
 
 namespace fs = std::filesystem;
 
-namespace csync {
+namespace claude_sync {
 
-// A non-blocking whole-process lock over ~/.claude/csync/csync.lock.
+// A non-blocking whole-process lock over ~/.claude/claude-sync/claude-sync.lock.
 //
 // Concurrent sessions are the normal case, not the exception -- several Claude
 // windows can fire a hook at the same moment. A run that cannot take the lock
@@ -31,4 +31,4 @@ private:
     fs::path path_;
 };
 
-}  // namespace csync
+}  // namespace claude_sync

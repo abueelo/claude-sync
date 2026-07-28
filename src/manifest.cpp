@@ -8,7 +8,7 @@
 
 using nlohmann::json;
 
-namespace csync {
+namespace claude_sync {
 namespace {
 
 void push_unique(std::vector<std::string>& v, const std::string& s) {
@@ -225,4 +225,4 @@ void Manifest::merge_from(const Manifest& other) {
               [](const Entry& a, const Entry& b) { return a.id < b.id; });
 }
 
-}  // namespace csync
+}  // namespace claude_sync

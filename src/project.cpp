@@ -7,7 +7,7 @@
 #include "git.h"
 #include "paths.h"
 
-namespace csync {
+namespace claude_sync {
 namespace {
 
 std::string trim(const std::string& s) {
@@ -185,4 +185,4 @@ std::vector<Project> scan_all() {
     return projects;
 }
 
-}  // namespace csync
+}  // namespace claude_sync

@@ -4,8 +4,8 @@
 
 #include "project.h"
 
-using csync::normalize_remote;
-using csync::same_id;
+using claude_sync::normalize_remote;
+using claude_sync::same_id;
 
 namespace {
 

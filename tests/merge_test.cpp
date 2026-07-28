@@ -3,8 +3,8 @@
 
 #include "merge.h"
 
-using csync::index_line_key;
-using csync::merge_memory_index;
+using claude_sync::index_line_key;
+using claude_sync::merge_memory_index;
 
 namespace {
 

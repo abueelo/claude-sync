@@ -6,16 +6,16 @@
 
 namespace fs = std::filesystem;
 
-namespace csync {
+namespace claude_sync {
 
 fs::path home_dir();
 
-// $HOME/.claude, overridable with CSYNC_CLAUDE_DIR so tests can point at a
+// $HOME/.claude, overridable with CLAUDE_SYNC_CLAUDE_DIR so tests can point at a
 // fixture tree instead of the real one.
 fs::path claude_dir();
 
 fs::path projects_dir();
-fs::path csync_dir();
+fs::path sync_dir_path();
 
 // Every directory under ~/.claude/projects/, sorted by name.
 std::vector<fs::path> list_project_dirs();
@@ -47,4 +47,4 @@ bool copy_file_over(const fs::path& from, const fs::path& to);
 
 std::string now_iso8601();
 
-}  // namespace csync
+}  // namespace claude_sync

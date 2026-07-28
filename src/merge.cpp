@@ -5,7 +5,7 @@
 #include <sstream>
 #include <vector>
 
-namespace csync {
+namespace claude_sync {
 namespace {
 
 std::vector<std::string> split_lines(const std::string& text) {
@@ -117,4 +117,4 @@ std::string merge_memory_index(const std::string& base, const std::string& ours,
     return join_lines(result, trailing);
 }
 
-}  // namespace csync
+}  // namespace claude_sync

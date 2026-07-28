@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace csync {
+namespace claude_sync {
 
 // MEMORY.md is an index of "- [Title](file.md) — hook" lines, one per memory.
 // Two machines writing different memories produce two different indexes, and a
@@ -22,4 +22,4 @@ std::string merge_memory_index(const std::string& base, const std::string& ours,
 // Returns the link target of an index line, or empty if the line is not one.
 std::string index_line_key(const std::string& line);
 
-}  // namespace csync
+}  // namespace claude_sync

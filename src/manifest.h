@@ -6,7 +6,7 @@
 
 #include "project.h"
 
-namespace csync {
+namespace claude_sync {
 
 // One project as the sync repo knows it. The id is the directory the memory
 // lives under; everything else is what lets a different machine, or this one
@@ -62,4 +62,4 @@ private:
     std::vector<Entry> entries_;
 };
 
-}  // namespace csync
+}  // namespace claude_sync

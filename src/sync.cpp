@@ -8,7 +8,7 @@
 #include "project.h"
 #include "repo.h"
 
-namespace csync {
+namespace claude_sync {
 namespace {
 
 // Global material is shared by every project, so it lives at one path in the
@@ -172,8 +172,8 @@ SyncReport run_sync(const SyncOptions& opts) {
     Config c = load_config();
 
     Lock lock;
-    if (!lock.acquire(csync_dir() / "csync.lock")) {
-        report.errors.push_back("another csync run holds the lock; skipping");
+    if (!lock.acquire(sync_dir_path() / "claude-sync.lock")) {
+        report.errors.push_back("another claude-sync run holds the lock; skipping");
         return report;
     }
 
@@ -247,4 +247,4 @@ SyncReport run_sync(const SyncOptions& opts) {
     return report;
 }
 
-}  // namespace csync
+}  // namespace claude_sync

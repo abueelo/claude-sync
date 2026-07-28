@@ -6,7 +6,7 @@
 
 namespace fs = std::filesystem;
 
-namespace csync {
+namespace claude_sync {
 
 enum class ProjectState {
     RemoteRepo,   // git repo with a remote -> remote/<host>/<owner>/<repo>
@@ -46,4 +46,4 @@ Project resolve(const fs::path& project_dir);
 
 std::vector<Project> scan_all();
 
-}  // namespace csync
+}  // namespace claude_sync

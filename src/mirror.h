@@ -5,7 +5,7 @@
 
 #include "config.h"
 
-namespace csync {
+namespace claude_sync {
 
 struct SyncStats {
     int toRepo = 0;
@@ -31,4 +31,4 @@ struct SyncStats {
 SyncStats sync_dir(const fs::path& localDir, const fs::path& repoDir, FileSet& baseline,
                    const std::string& machine, std::vector<std::string>& log);
 
-}  // namespace csync
+}  // namespace claude_sync

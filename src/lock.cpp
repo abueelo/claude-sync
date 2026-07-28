@@ -6,7 +6,7 @@
 
 #include <string>
 
-namespace csync {
+namespace claude_sync {
 
 Lock::~Lock() { release(); }
 
@@ -42,4 +42,4 @@ void Lock::release() {
     fd_ = -1;
 }
 
-}  // namespace csync
+}  // namespace claude_sync

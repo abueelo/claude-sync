@@ -4,7 +4,7 @@
 
 #include "config.h"
 
-namespace csync {
+namespace claude_sync {
 
 fs::path repo_path();
 
@@ -56,4 +56,4 @@ bool create_remote_repo(const std::string& name, std::string& urlOut, std::strin
 
 bool gh_available();
 
-}  // namespace csync
+}  // namespace claude_sync

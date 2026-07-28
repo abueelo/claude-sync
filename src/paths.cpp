@@ -11,7 +11,7 @@
 #include <iomanip>
 #include <sstream>
 
-namespace csync {
+namespace claude_sync {
 namespace {
 
 // Pulls the value of the first "cwd" field out of a transcript. These files run
@@ -61,13 +61,13 @@ fs::path home_dir() {
 }
 
 fs::path claude_dir() {
-    if (const char* o = std::getenv("CSYNC_CLAUDE_DIR"); o && *o) return fs::path(o);
+    if (const char* o = std::getenv("CLAUDE_SYNC_CLAUDE_DIR"); o && *o) return fs::path(o);
     return home_dir() / ".claude";
 }
 
 fs::path projects_dir() { return claude_dir() / "projects"; }
 
-fs::path csync_dir() { return claude_dir() / "csync"; }
+fs::path sync_dir_path() { return claude_dir() / "claude-sync"; }
 
 std::vector<fs::path> list_project_dirs() {
     std::vector<fs::path> dirs;
@@ -210,4 +210,4 @@ bool write_atomic(const fs::path& target, const std::string& contents) {
     return true;
 }
 
-}  // namespace csync
+}  // namespace claude_sync

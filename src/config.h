@@ -6,7 +6,7 @@
 
 #include "project.h"
 
-namespace csync {
+namespace claude_sync {
 
 struct Scope {
     bool memory = true;
@@ -46,4 +46,4 @@ bool save_state(const State& s);
 
 std::string hostname();
 
-}  // namespace csync
+}  // namespace claude_sync

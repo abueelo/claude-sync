@@ -12,11 +12,11 @@
 
 using nlohmann::json;
 
-namespace csync {
+namespace claude_sync {
 namespace {
 
-fs::path config_path() { return csync_dir() / "config.json"; }
-fs::path state_path() { return csync_dir() / "state.json"; }
+fs::path config_path() { return sync_dir_path() / "config.json"; }
+fs::path state_path() { return sync_dir_path() / "state.json"; }
 
 }  // namespace
 
@@ -151,4 +151,4 @@ bool save_state(const State& s) {
     return write_atomic(state_path(), j.dump(2) + "\n");
 }
 
-}  // namespace csync
+}  // namespace claude_sync

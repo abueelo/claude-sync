@@ -13,21 +13,21 @@
 #include "sync.h"
 
 using nlohmann::json;
-using namespace csync;
+using namespace claude_sync;
 
 namespace {
 
 void print_usage() {
-    std::cout << "csync - sync Claude Code memory across devices\n\n"
+    std::cout << "claude-sync - sync Claude Code memory across devices\n\n"
                  "usage:\n"
-                 "  csync init [--remote URL] [--create-remote NAME]\n"
-                 "                              create ~/.claude/csync and write config.json\n"
-                 "  csync status [--json]       resolve every project's identity\n"
-                 "  csync pull                  take what other devices pushed\n"
-                 "  csync push                  publish what changed here\n"
-                 "  csync sync [--dry-run]      pull then push\n"
-                 "  csync mergetool ...         git merge driver, called by git\n"
-                 "  csync help\n";
+                 "  claude-sync init [--remote URL] [--create-remote NAME]\n"
+                 "                              create ~/.claude/claude-sync and write config.json\n"
+                 "  claude-sync status [--json]       resolve every project's identity\n"
+                 "  claude-sync pull                  take what other devices pushed\n"
+                 "  claude-sync push                  publish what changed here\n"
+                 "  claude-sync sync [--dry-run]      pull then push\n"
+                 "  claude-sync mergetool ...         git merge driver, called by git\n"
+                 "  claude-sync help\n";
 }
 
 int cmd_init(const std::vector<std::string>& args) {
@@ -43,7 +43,7 @@ int cmd_init(const std::vector<std::string>& args) {
         } else if (args[i] == "--yes" || args[i] == "-y") {
             assumeYes = true;
         } else {
-            std::cerr << "csync init: unknown argument '" << args[i] << "'\n";
+            std::cerr << "claude-sync init: unknown argument '" << args[i] << "'\n";
             return 2;
         }
     }
@@ -65,7 +65,7 @@ int cmd_init(const std::vector<std::string>& args) {
 
         std::string url, err;
         if (!create_remote_repo(createName, url, err)) {
-            std::cerr << "csync: " << err << "\n";
+            std::cerr << "claude-sync: " << err << "\n";
             return 1;
         }
         std::cout << "created " << url << "\n";
@@ -77,11 +77,11 @@ int cmd_init(const std::vector<std::string>& args) {
     if (!remote.empty()) c.remoteUrl = remote;
 
     if (!save_config(c)) {
-        std::cerr << "csync: could not write " << (csync_dir() / "config.json") << "\n";
+        std::cerr << "claude-sync: could not write " << (sync_dir_path() / "config.json") << "\n";
         return 1;
     }
 
-    std::cout << (existed ? "updated " : "created ") << (csync_dir() / "config.json") << "\n";
+    std::cout << (existed ? "updated " : "created ") << (sync_dir_path() / "config.json") << "\n";
     std::cout << "machine: " << c.machineName << "\n";
     std::cout << "remote:  " << (c.remoteUrl.empty() ? "(none set)" : c.remoteUrl) << "\n";
     if (c.remoteUrl.empty()) {
@@ -101,7 +101,7 @@ int cmd_status(const std::vector<std::string>& args) {
         if (a == "--json") {
             as_json = true;
         } else {
-            std::cerr << "csync status: unknown argument '" << a << "'\n";
+            std::cerr << "claude-sync status: unknown argument '" << a << "'\n";
             return 2;
         }
     }
@@ -154,7 +154,7 @@ int cmd_status(const std::vector<std::string>& args) {
 int report_sync(const SyncReport& r) {
     for (const auto& line : r.log) std::cout << "  " << line << "\n";
 
-    for (const auto& e : r.errors) std::cerr << "csync: " << e << "\n";
+    for (const auto& e : r.errors) std::cerr << "claude-sync: " << e << "\n";
     if (!r.errors.empty()) return 1;
 
     const auto& s = r.stats;
@@ -178,7 +178,7 @@ int report_sync(const SyncReport& r) {
 // a merge, never by a person.
 int cmd_mergetool(const std::vector<std::string>& args) {
     if (args.size() < 3) {
-        std::cerr << "usage: csync mergetool %O %A %B [%P]\n";
+        std::cerr << "usage: claude-sync mergetool %O %A %B [%P]\n";
         return 2;
     }
 
@@ -229,13 +229,13 @@ int cmd_sync(const std::vector<std::string>& args, bool fetch, bool push) {
         if (a == "--dry-run" || a == "-n") {
             opts.dryRun = true;
         } else {
-            std::cerr << "csync: unknown argument '" << a << "'\n";
+            std::cerr << "claude-sync: unknown argument '" << a << "'\n";
             return 2;
         }
     }
 
     if (!config_exists()) {
-        std::cerr << "csync: not set up yet; run 'csync init --remote <url>'\n";
+        std::cerr << "claude-sync: not set up yet; run 'claude-sync init --remote <url>'\n";
         return 1;
     }
 
@@ -261,7 +261,7 @@ int main(int argc, char** argv) {
     if (cmd == "sync") return cmd_sync(rest, /*fetch=*/true, /*push=*/true);
     if (cmd == "mergetool") return cmd_mergetool(rest);
 
-    std::cerr << "csync: unknown command '" << cmd << "'\n\n";
+    std::cerr << "claude-sync: unknown command '" << cmd << "'\n\n";
     print_usage();
     return 2;
 }
