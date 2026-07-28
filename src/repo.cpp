@@ -288,7 +288,17 @@ bool create_remote_repo(const std::string& name, std::string& urlOut, std::strin
         return false;
     }
 
-    auto view = run("gh", {"repo", "view", name, "--json", "sshUrl", "-q", ".sshUrl"});
+    // gh's own git_protocol setting is the source of truth for which URL form
+    // will actually work here. Browser-based `gh auth login` sets up a
+    // credential helper for HTTPS git operations but configures no SSH key, so
+    // defaulting to the SSH URL fails with "Permission denied (publickey)" for
+    // most people who authenticated that way. SSH is only used if gh itself is
+    // configured for it.
+    auto protocol = run("gh", {"config", "get", "git_protocol"});
+    bool useSsh = protocol.ok() && protocol.out == "ssh";
+
+    const char* field = useSsh ? "sshUrl" : "url";
+    auto view = run("gh", {"repo", "view", name, "--json", field, "-q", std::string(".") + field});
     if (!view.ok() || view.out.empty()) {
         err = "repo was created but its URL could not be read back; set it with "
               "'claude-sync init --remote <url>'";
