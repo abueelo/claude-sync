@@ -36,9 +36,22 @@ bool config_exists();
 using FileSet = std::map<std::string, std::string>;
 using Baseline = std::map<std::string, FileSet>;
 
+// When this machine first observed a project's current remote, keyed by root
+// commit because that survives the renames the remote does not.
+//
+// This is what the relink guard actually needs. Using wall-clock "now" as the
+// observation time is wrong: a stale device's clock is always later than the
+// rename it has not noticed, so the guard would never fire and the two devices
+// would rename the project back and forth forever.
+struct Observation {
+    std::string remote;
+    std::string firstSeen;
+};
+
 struct State {
     std::vector<Project> projects;
     Baseline baseline;
+    std::map<std::string, Observation> observed;  // rootCommit -> observation
     std::string lastSync;
 };
 

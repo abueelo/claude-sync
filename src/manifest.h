@@ -61,6 +61,17 @@ public:
     // because the Stop hook runs on every assistant turn.
     Entry& upsert(const Project& p, const std::string& machine, bool touched);
 
+    // Moves an entry to a new id after a rename, transfer, or a local repo
+    // gaining a remote. The old id is kept in `remotes` so a device that has
+    // not noticed the change yet still resolves through it.
+    //
+    // `observedAt` is when this machine saw the new id. An entry only moves if
+    // that is newer than its canonicalSince: GitHub redirects old remote URLs
+    // indefinitely, so a second device can keep reporting the pre-rename URL
+    // for a long time, and without this rule the two would rename the folder
+    // back and forth against each other forever.
+    bool relink(Entry& entry, const Project& p, const std::string& observedAt);
+
     std::vector<Entry>& entries() { return entries_; }
     const std::vector<Entry>& entries() const { return entries_; }
 

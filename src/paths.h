@@ -47,4 +47,8 @@ bool copy_file_over(const fs::path& from, const fs::path& to);
 
 std::string now_iso8601();
 
+// Millisecond resolution. The relink guard compares timestamps for ordering,
+// and two events inside the same second must not look simultaneous.
+std::string now_iso8601_ms();
+
 }  // namespace claude_sync

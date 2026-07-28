@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "git.h"
 #include "lock.h"
 #include "manifest.h"
 #include "paths.h"
@@ -26,6 +27,31 @@ std::vector<GlobalPair> global_pairs(const Config& c) {
         {claude_dir() / "agents", "global/agents", c.scope.agents},
         {claude_dir() / "commands", "global/commands", c.scope.commands},
     };
+}
+
+// Moves a project's directory inside the sync repo, preferring git mv so the
+// memory's history follows it rather than reading as a delete plus an add.
+void move_in_repo(const fs::path& repo, const fs::path& from, const fs::path& to, const Store& base,
+                  SyncReport& report) {
+    std::error_code ec;
+    if (!fs::is_directory(from, ec)) return;  // nothing recorded under the old id yet
+    if (fs::exists(to, ec)) {
+        // Both ids already hold memory. Merging them is the mirror's job on the
+        // next pass; moving over the top would lose whatever is already there.
+        report.log.push_back("both the old and new ids hold memory; leaving them to merge");
+        return;
+    }
+
+    fs::create_directories(to.parent_path(), ec);
+
+    auto mv = run_git(repo, {"mv", fs::relative(from, repo, ec).generic_string(),
+                             fs::relative(to, repo, ec).generic_string()});
+    if (!mv.ok()) {
+        // Untracked files have nothing for git mv to move; a plain rename is
+        // equivalent for them.
+        fs::rename(from, to, ec);
+    }
+    (void)base;
 }
 
 std::string commit_message(const SyncStats& s, const std::string& machine,
@@ -122,18 +148,58 @@ SyncStats reconcile(const Config& c, const fs::path& repo, const Store& base, St
         if (!p.synced()) continue;
         if (!c.scope.memory) break;
 
-        Manifest::Match how = Manifest::Match::None;
-        manifest.resolve(p, &how);
-        if (how == Manifest::Match::RootCommit || how == Manifest::Match::RemoteAlias) {
-            // The project is known but its id has moved -- a rename, a transfer,
-            // or a local repo that just gained a remote. Relinking (the git mv
-            // and the canonicalSince check that stops a stale device renaming
-            // backwards) is step 4. Until then this is reported, not acted on.
-            report.log.push_back("id changed for " + p.cwd.filename().string() +
-                                 "; relink lands in step 4, syncing under " + p.id);
+        // When did THIS machine first see the identity it is currently
+        // reporting? A device still pointing at a pre-rename URL has been
+        // reporting it since before the rename, and that is what makes it
+        // stale -- not its clock, which is always later.
+        std::string currentRemote = normalize_remote(p.remoteUrl);
+        if (currentRemote.empty()) currentRemote = p.id;
+
+        Observation& obs = state.observed[p.rootCommit];
+        if (obs.remote != currentRemote || obs.firstSeen.empty()) {
+            obs.remote = currentRemote;
+            obs.firstSeen = now_iso8601_ms();
         }
 
-        Entry* known = manifest.find_by_id(p.id);
+        Manifest::Match how = Manifest::Match::None;
+        Entry* known = manifest.resolve(p, &how);
+
+        if (known && (how == Manifest::Match::RootCommit || how == Manifest::Match::RemoteAlias)) {
+            // Known project, different id: a rename, a transfer, or a local repo
+            // that just gained a remote. Move the memory rather than starting a
+            // second entry from empty.
+            std::string oldId = known->id;
+            std::string oldPrefix = "projects/" + oldId + "/memory";
+
+            if (manifest.relink(*known, p, obs.firstSeen)) {
+                Store from = base;
+                from.prefix = oldPrefix;
+                Store to = base;
+                to.prefix = "projects/" + p.id + "/memory";
+
+                // git mv, so the memory keeps its history across the rename.
+                move_in_repo(repo, from.dir_for(repo, oldPrefix), to.dir_for(repo, to.prefix), base,
+                             report);
+
+                // The baseline is keyed by id, so it has to move with it or the
+                // next compare would look like every file was added at once.
+                if (state.baseline.count(oldId)) {
+                    state.baseline[p.id] = state.baseline[oldId];
+                    state.baseline.erase(oldId);
+                }
+
+                report.log.push_back("relinked " + p.cwd.filename().string() + ": " + oldId +
+                                     " -> " + p.id);
+            } else {
+                // Our observation is older than canonicalSince: another device
+                // already moved this entry and we are the stale one. Sync into
+                // the current path and say so rather than renaming it back.
+                report.log.push_back(p.cwd.filename().string() + ": this machine still reports " +
+                                     p.id + " but the project has moved to " + known->id +
+                                     "; run 'git remote set-url origin' to catch up");
+            }
+        }
+
         std::string entryId = known ? known->id : p.id;
 
         FileSet baseline = state.baseline.count(entryId) ? state.baseline[entryId] : FileSet{};

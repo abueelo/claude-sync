@@ -15,6 +15,7 @@ add_library(claude_sync_core STATIC
   src/store.cpp
   src/password.cpp
   src/setup.cpp
+  src/hook.cpp
   src/git.cpp
   src/paths.cpp
   src/project.cpp

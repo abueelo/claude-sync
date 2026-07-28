@@ -188,6 +188,21 @@ std::string now_iso8601() {
     return buf.data();
 }
 
+std::string now_iso8601_ms() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t t = std::chrono::system_clock::to_time_t(now);
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+
+    std::tm tm{};
+    ::gmtime_r(&t, &tm);
+    std::array<char, 32> buf{};
+    std::strftime(buf.data(), buf.size(), "%Y-%m-%dT%H:%M:%S", &tm);
+
+    std::ostringstream ss;
+    ss << buf.data() << '.' << std::setw(3) << std::setfill('0') << ms.count() << 'Z';
+    return ss.str();
+}
+
 bool write_atomic(const fs::path& target, const std::string& contents) {
     std::error_code ec;
     fs::create_directories(target.parent_path(), ec);

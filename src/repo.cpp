@@ -193,9 +193,12 @@ bool repo_commit_and_push(const std::string& message, bool doPush, const Store& 
     if (fetch.ok()) {
         auto rebase = run_git(repo_path(), {"rebase", "origin/" + branch});
 
-        // The same manifest collision can surface here, where the race is most
-        // likely to happen in the first place.
-        if (!rebase.ok() && resolve_manifest_conflict(store)) {
+        // The same manifest collision surfaces here, where the race is most
+        // likely to happen in the first place. A rebase replays every commit
+        // this device is behind by, and each one can collide on the manifest,
+        // so this resolves in a loop rather than assuming a single stop.
+        for (int guard = 0; guard < 64 && !rebase.ok(); ++guard) {
+            if (!resolve_manifest_conflict(store)) break;
             rebase = run_git(repo_path(), {"-c", "core.editor=true", "rebase", "--continue"});
         }
 

@@ -159,7 +159,7 @@ Entry& Manifest::upsert(const Project& p, const std::string& machine, bool touch
     Match how = Match::None;
     Entry* found = resolve(p, &how);
 
-    std::string now = now_iso8601();
+    std::string now = now_iso8601_ms();
     std::string folder = p.cwd.filename().string();
     bool isNew = (found == nullptr);
 
@@ -193,6 +193,27 @@ Entry& Manifest::upsert(const Project& p, const std::string& machine, bool touch
     }
 
     return *found;
+}
+
+bool Manifest::relink(Entry& entry, const Project& p, const std::string& observedAt) {
+    if (p.id.empty() || same_id(entry.id, p.id)) return false;
+
+    // A stale device resolves through an alias and syncs into the current
+    // canonical path; it must not drag the entry back to the old id.
+    if (!entry.canonicalSince.empty() && observedAt <= entry.canonicalSince) return false;
+
+    // The old id becomes an alias so the stale device keeps finding this entry.
+    push_unique(entry.remotes, strip_remote_prefix(entry.id));
+    push_unique(entry.remotes, normalize_remote(p.remoteUrl));
+
+    entry.id = p.id;
+    entry.canonicalSince = observedAt;
+    entry.updated = observedAt;
+    if (!p.rootCommit.empty()) entry.rootCommit = p.rootCommit;
+
+    std::sort(entries_.begin(), entries_.end(),
+              [](const Entry& a, const Entry& b) { return a.id < b.id; });
+    return true;
 }
 
 void Manifest::merge_from(const Manifest& other) {

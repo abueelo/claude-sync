@@ -108,6 +108,16 @@ State load_state() {
         }
     }
 
+    if (j.contains("observed") && j["observed"].is_object()) {
+        for (const auto& [root, o] : j["observed"].items()) {
+            if (!o.is_object()) continue;
+            Observation obs;
+            obs.remote = o.value("remote", std::string{});
+            obs.firstSeen = o.value("firstSeen", std::string{});
+            s.observed[root] = std::move(obs);
+        }
+    }
+
     if (j.contains("projects") && j["projects"].is_array()) {
         for (const auto& e : j["projects"]) {
             if (!e.is_object()) continue;
@@ -144,11 +154,17 @@ bool save_state(const State& s) {
         baseline[id] = f;
     }
 
+    json observed = json::object();
+    for (const auto& [root, o] : s.observed) {
+        observed[root] = {{"remote", o.remote}, {"firstSeen", o.firstSeen}};
+    }
+
     json j;
-    j["version"] = 2;
+    j["version"] = 3;
     j["lastSync"] = s.lastSync.empty() ? now_iso8601() : s.lastSync;
     j["projects"] = entries;
     j["baseline"] = baseline;
+    j["observed"] = observed;
 
     return write_atomic(state_path(), j.dump(2) + "\n");
 }

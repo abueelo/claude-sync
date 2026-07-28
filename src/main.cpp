@@ -8,6 +8,7 @@
 #include "json.hpp"
 #include "paths.h"
 #include "crypt.h"
+#include "hook.h"
 #include "merge.h"
 #include "password.h"
 #include "setup.h"
@@ -31,6 +32,7 @@ void print_usage() {
                  "  claude-sync push                  publish what changed here\n"
                  "  claude-sync sync [--dry-run]      pull then push\n"
                  "  claude-sync unlock          cache the key on this device\n"
+                 "  claude-sync hook <event>    read hook JSON on stdin, called by Claude Code\n"
                  "  claude-sync mergetool ...         git merge driver, called by git\n"
                  "  claude-sync help\n";
 }
@@ -347,6 +349,10 @@ int main(int argc, char** argv) {
     if (cmd == "sync") return cmd_sync(rest, /*fetch=*/true, /*push=*/true);
     if (cmd == "mergetool") return cmd_mergetool(rest);
     if (cmd == "unlock") return cmd_unlock(rest);
+    if (cmd == "hook") {
+        // A hook must never fail: a non-zero exit here blocks a session.
+        return run_hook(rest.empty() ? "unknown" : rest[0]);
+    }
 
     std::cerr << "claude-sync: unknown command '" << cmd << "'\n\n";
     print_usage();
