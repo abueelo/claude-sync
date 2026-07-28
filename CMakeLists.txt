@@ -14,6 +14,11 @@ add_library(csync_core STATIC
   src/paths.cpp
   src/project.cpp
   src/config.cpp
+  src/lock.cpp
+  src/manifest.cpp
+  src/mirror.cpp
+  src/repo.cpp
+  src/sync.cpp
 )
 target_include_directories(csync_core PUBLIC src third_party)
 

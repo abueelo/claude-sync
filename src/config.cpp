@@ -18,16 +18,6 @@ namespace {
 fs::path config_path() { return csync_dir() / "config.json"; }
 fs::path state_path() { return csync_dir() / "state.json"; }
 
-std::string now_iso8601() {
-    auto now = std::chrono::system_clock::now();
-    std::time_t t = std::chrono::system_clock::to_time_t(now);
-    std::tm tm{};
-    ::gmtime_r(&t, &tm);
-    std::array<char, 32> buf{};
-    std::strftime(buf.data(), buf.size(), "%Y-%m-%dT%H:%M:%SZ", &tm);
-    return buf.data();
-}
-
 }  // namespace
 
 std::string hostname() {
@@ -94,10 +84,49 @@ bool save_config(const Config& c) {
     return write_atomic(config_path(), j.dump(2) + "\n");
 }
 
-bool save_state(const std::vector<Project>& projects) {
+State load_state() {
+    State s;
+
+    std::ifstream in(state_path());
+    if (!in) return s;
+
+    json j = json::parse(in, nullptr, false);
+    if (j.is_discarded() || !j.is_object()) return s;
+
+    s.lastSync = j.value("lastSync", std::string{});
+
+    if (j.contains("baseline") && j["baseline"].is_object()) {
+        for (const auto& [id, files] : j["baseline"].items()) {
+            if (!files.is_object()) continue;
+            FileSet fs;
+            for (const auto& [name, hash] : files.items()) {
+                if (hash.is_string()) fs[name] = hash.get<std::string>();
+            }
+            s.baseline[id] = std::move(fs);
+        }
+    }
+
+    if (j.contains("projects") && j["projects"].is_array()) {
+        for (const auto& e : j["projects"]) {
+            if (!e.is_object()) continue;
+            Project p;
+            p.escapedDir = e.value("escapedDir", std::string{});
+            p.cwd = e.value("cwd", std::string{});
+            p.repoRoot = e.value("repoRoot", std::string{});
+            p.id = e.value("id", std::string{});
+            p.rootCommit = e.value("rootCommit", std::string{});
+            p.remoteUrl = e.value("remoteUrl", std::string{});
+            s.projects.push_back(std::move(p));
+        }
+    }
+
+    return s;
+}
+
+bool save_state(const State& s) {
     json entries = json::array();
-    for (const auto& p : projects) {
-        if (!p.synced()) continue;
+    for (const auto& p : s.projects) {
+        if (p.id.empty()) continue;
         entries.push_back({{"escapedDir", p.escapedDir},
                            {"cwd", p.cwd.string()},
                            {"repoRoot", p.repoRoot.string()},
@@ -106,10 +135,18 @@ bool save_state(const std::vector<Project>& projects) {
                            {"remoteUrl", p.remoteUrl}});
     }
 
+    json baseline = json::object();
+    for (const auto& [id, files] : s.baseline) {
+        json f = json::object();
+        for (const auto& [name, hash] : files) f[name] = hash;
+        baseline[id] = f;
+    }
+
     json j;
-    j["version"] = 1;
-    j["lastScan"] = now_iso8601();
+    j["version"] = 2;
+    j["lastSync"] = s.lastSync.empty() ? now_iso8601() : s.lastSync;
     j["projects"] = entries;
+    j["baseline"] = baseline;
 
     return write_atomic(state_path(), j.dump(2) + "\n");
 }

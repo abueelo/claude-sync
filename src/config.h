@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -27,10 +28,21 @@ Config load_config();
 bool save_config(const Config& c);
 bool config_exists();
 
-// The resolution cache. The per-file manifest the full design calls for arrives
-// with mirroring in step 2; recording it now would be describing files this
-// version never reads.
-bool save_state(const std::vector<Project>& projects);
+// What the last successful sync saw, keyed by project id then filename, with a
+// content hash as the value. This is the third leg of the three-way compare:
+// without it, a file present on one side and absent on the other is ambiguous
+// between "newly added there" and "deleted here".
+using FileSet = std::map<std::string, std::string>;
+using Baseline = std::map<std::string, FileSet>;
+
+struct State {
+    std::vector<Project> projects;
+    Baseline baseline;
+    std::string lastSync;
+};
+
+State load_state();
+bool save_state(const State& s);
 
 std::string hostname();
 

@@ -31,4 +31,20 @@ int count_memory_files(const fs::path& project_dir);
 // Writes via a sibling .tmp file and renames over the target.
 bool write_atomic(const fs::path& target, const std::string& contents);
 
+std::string read_file(const fs::path& p);
+
+// Names of the regular files directly inside dir, sorted. Dotfiles skipped.
+std::vector<std::string> list_files(const fs::path& dir);
+
+// FNV-1a over the file's bytes, as 16 hex chars. Used only to answer "did this
+// change since the last sync", so a non-cryptographic hash is the right tool.
+std::string content_hash(const fs::path& p);
+std::string hash_bytes(const std::string& data);
+
+long long mtime_seconds(const fs::path& p);
+
+bool copy_file_over(const fs::path& from, const fs::path& to);
+
+std::string now_iso8601();
+
 }  // namespace csync
