@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(claude-sync CXX)
+project(claude-sync C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,6 +10,8 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 add_library(claude_sync_core STATIC
+  third_party/monocypher.c
+  src/crypt.cpp
   src/git.cpp
   src/paths.cpp
   src/project.cpp
@@ -34,3 +36,7 @@ add_test(NAME normalize COMMAND normalize_test)
 add_executable(merge_test tests/merge_test.cpp)
 target_link_libraries(merge_test PRIVATE claude_sync_core)
 add_test(NAME merge COMMAND merge_test)
+
+add_executable(crypt_test tests/crypt_test.cpp)
+target_link_libraries(crypt_test PRIVATE claude_sync_core)
+add_test(NAME crypt COMMAND crypt_test)
