@@ -1,0 +1,35 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap.sh\"",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x \"${CLAUDE_PLUGIN_DATA}/bin/claude-sync\" ] && \"${CLAUDE_PLUGIN_DATA}/bin/claude-sync\" hook stop; true"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x \"${CLAUDE_PLUGIN_DATA}/bin/claude-sync\" ] && \"${CLAUDE_PLUGIN_DATA}/bin/claude-sync\" hook session-end; true"
+          }
+        ]
+      }
+    ]
+  }
+}

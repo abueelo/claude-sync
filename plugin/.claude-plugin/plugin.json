@@ -1,0 +1,5 @@
+{
+  "name": "claude-sync",
+  "description": "Syncs Claude Code memory across devices through a private git repo, keyed by git identity rather than local path.",
+  "version": "0.1.0"
+}

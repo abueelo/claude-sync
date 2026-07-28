@@ -1,0 +1,11 @@
+{
+  "name": "claude-sync",
+  "owner": { "name": "abueelo" },
+  "plugins": [
+    {
+      "name": "claude-sync",
+      "source": "./plugin",
+      "description": "Syncs Claude Code memory across devices through a private git repo, keyed by git identity rather than local path."
+    }
+  ]
+}
