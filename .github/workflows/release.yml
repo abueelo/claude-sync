@@ -1,0 +1,63 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux-x86_64
+          - os: ubuntu-24.04-arm
+            name: linux-arm64
+          - os: macos-14
+            name: macos-universal
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          if [ "${{ matrix.name }}" = "macos-universal" ]; then
+            cmake -B build -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+          else
+            cmake -B build -DCMAKE_BUILD_TYPE=Release
+          fi
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp build/claude-sync "dist/claude-sync-${{ matrix.name }}"
+          chmod +x "dist/claude-sync-${{ matrix.name }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: claude-sync-${{ matrix.name }}
+          path: dist/claude-sync-${{ matrix.name }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
