@@ -23,10 +23,8 @@ MANIFEST="$PLUGIN_ROOT/.claude-plugin/plugin.json"
 WANT_VERSION=$(grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' "$MANIFEST" 2>/dev/null \
   | sed 's/.*"\([^"]*\)"$/\1/' || echo "unknown")
 
-# The repo that publishes release binaries. This is a placeholder until the
-# source repo has its own release matrix set up (see .github/workflows/release.yml);
-# override it for local testing or once that exists.
-RELEASE_REPO="${CLAUDE_SYNC_RELEASE_REPO:-REPLACE_WITH_OWNER/claude-sync}"
+# The repo that publishes release binaries. Override for local testing.
+RELEASE_REPO="${CLAUDE_SYNC_RELEASE_REPO:-abueelo/claude-sync}"
 
 need_fetch=1
 if [ -x "$BIN" ] && [ -f "$VERSION_FILE" ] && [ "$(cat "$VERSION_FILE" 2>/dev/null)" = "$WANT_VERSION" ]; then

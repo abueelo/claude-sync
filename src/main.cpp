@@ -25,7 +25,7 @@ namespace {
 void print_usage() {
     std::cout << "claude-sync - sync Claude Code memory across devices\n\n"
                  "usage:\n"
-                 "  claude-sync init [--remote URL] [--create-remote NAME]\n"
+                 "  claude-sync init [--remote URL] [--encrypt|--no-encrypt] [--create-remote NAME]\n"
                  "                              create ~/.claude/claude-sync and write config.json\n"
                  "  claude-sync status [--json]       resolve every project's identity\n"
                  "  claude-sync pull                  take what other devices pushed\n"
