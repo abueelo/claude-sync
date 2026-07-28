@@ -8,14 +8,26 @@ It identifies a project by its git remote rather than its local folder path, so 
 
 ### 1. Install the binary
 
-**Plugin (recommended once a release exists):**
+**Plugin (recommended):**
 
 ```
 /plugin marketplace add abueelo/claude-sync
 /plugin install claude-sync@claude-sync
 ```
 
-This wires up the sync hooks automatically and fetches the right binary for your platform on first use. It needs a tagged release to download from — until one has been cut, use the option below.
+This wires up the sync hooks automatically and fetches the right binary for your platform on first use, into its own managed location — nothing for you to place by hand. Skip straight to step 2.
+
+**Download a release binary:**
+
+Grab the asset for your platform from the [latest release](https://github.com/abueelo/claude-sync/releases/latest) — `claude-sync-macos-universal`, `claude-sync-linux-x86_64`, or `claude-sync-linux-arm64` — then put it somewhere on your `PATH`:
+
+```
+curl -fsSL -o claude-sync https://github.com/abueelo/claude-sync/releases/latest/download/claude-sync-macos-universal
+chmod +x claude-sync
+sudo mv claude-sync /usr/local/bin/claude-sync
+```
+
+Swap the asset name for your platform. `/usr/local/bin` is on `PATH` by default on macOS and most Linux setups; use `~/.local/bin` instead if you'd rather not need `sudo` (make sure it's on your `PATH`).
 
 **Build from source:**
 
@@ -24,9 +36,8 @@ git clone https://github.com/abueelo/claude-sync.git
 cd claude-sync
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
+sudo mv build/claude-sync /usr/local/bin/claude-sync
 ```
-
-The binary is `build/claude-sync`. Put it on your `PATH`, or reference it by full path in the steps below.
 
 ### 2. Point it at a private repo
 
