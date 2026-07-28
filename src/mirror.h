@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "config.h"
+#include "store.h"
 
 namespace claude_sync {
 
@@ -28,7 +29,7 @@ struct SyncStats {
 // tool that guesses will eventually resurrect something the user deleted.
 //
 // `baseline` is updated in place to describe the reconciled state.
-SyncStats sync_dir(const fs::path& localDir, const fs::path& repoDir, FileSet& baseline,
-                   const std::string& machine, std::vector<std::string>& log);
+SyncStats sync_dir(const fs::path& localDir, const fs::path& repoDir, const Store& store,
+                   FileSet& baseline, const std::string& machine, std::vector<std::string>& log);
 
 }  // namespace claude_sync

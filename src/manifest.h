@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "project.h"
+#include "store.h"
 
 namespace claude_sync {
 
@@ -23,9 +24,14 @@ struct Entry {
 
 class Manifest {
 public:
-    static Manifest load(const fs::path& repo);
+    static Manifest load(const fs::path& repo, const Store& store);
     static Manifest parse(const std::string& text);
-    bool save(const fs::path& repo) const;
+    bool save(const fs::path& repo, const Store& store) const;
+
+    // Where the manifest lives in the repo. Encrypted repos keep it sealed
+    // under a different name, since manifest.json holds remote URLs, folder
+    // names and machine names -- the most identifying material in the repo.
+    static std::string filename(const Store& store);
 
     // Unions another manifest into this one, entry by entry.
     //

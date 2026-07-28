@@ -45,7 +45,7 @@ std::string conflict_name(const std::string& rel, const std::string& machine) {
     return parent.empty() ? name : (parent / name).generic_string();
 }
 
-void remove_and_prune(const fs::path& file, const fs::path& stopAt) {
+void remove_local(const fs::path& file, const fs::path& stopAt) {
     std::error_code ec;
     fs::remove(file, ec);
 
@@ -69,31 +69,42 @@ void SyncStats::add(const SyncStats& o) {
     conflicts += o.conflicts;
 }
 
-SyncStats sync_dir(const fs::path& localDir, const fs::path& repoDir, FileSet& baseline,
-                   const std::string& machine, std::vector<std::string>& log) {
+SyncStats sync_dir(const fs::path& localDir, const fs::path& repoDir, const Store& store,
+                   FileSet& baseline, const std::string& machine,
+                   std::vector<std::string>& log) {
     SyncStats stats;
 
+    // Local is always plaintext on disk; the repo side may be sealed. Both are
+    // read up front into logical-name maps so everything below is mode-agnostic.
+    std::map<std::string, std::string> local;
+    for (const auto& rel : list_rel_files(localDir)) local[rel] = read_file(localDir / rel);
+
+    int unreadable = 0;
+    std::map<std::string, std::string> repo = store_read_all(repoDir, store, &unreadable);
+    if (unreadable > 0) {
+        log.push_back(std::to_string(unreadable) +
+                      " file(s) could not be decrypted and were left alone");
+    }
+
     std::set<std::string> names;
-    for (const auto& n : list_rel_files(localDir)) names.insert(n);
-    for (const auto& n : list_rel_files(repoDir)) names.insert(n);
+    for (const auto& [n, _] : local) names.insert(n);
+    for (const auto& [n, _] : repo) names.insert(n);
     for (const auto& [n, _] : baseline) names.insert(n);
 
     FileSet next;
 
     for (const auto& rel : names) {
-        fs::path lp = localDir / rel;
-        fs::path rp = repoDir / rel;
-
-        std::error_code ec;
-        bool hasL = fs::is_regular_file(lp, ec);
-        bool hasR = fs::is_regular_file(rp, ec);
+        auto lit = local.find(rel);
+        auto rit = repo.find(rel);
+        bool hasL = lit != local.end();
+        bool hasR = rit != repo.end();
 
         auto bit = baseline.find(rel);
         bool hasB = bit != baseline.end();
         std::string bh = hasB ? bit->second : std::string{};
 
-        std::string lh = hasL ? content_hash(lp) : std::string{};
-        std::string rh = hasR ? content_hash(rp) : std::string{};
+        std::string lh = hasL ? hash_bytes(lit->second) : std::string{};
+        std::string rh = hasR ? hash_bytes(rit->second) : std::string{};
 
         if (!hasL && !hasR) {
             continue;  // gone from both sides; drop it from the baseline
@@ -103,20 +114,20 @@ SyncStats sync_dir(const fs::path& localDir, const fs::path& repoDir, FileSet& b
             if (hasB) {
                 // The other side deleted it and we still had the synced copy.
                 if (lh == bh) {
-                    remove_and_prune(lp, localDir);
+                    remove_local(localDir / rel, localDir);
                     ++stats.deletedLocal;
                     log.push_back("deleted locally: " + rel);
                     continue;
                 }
                 // Deleted there, edited here. Keeping the edit is the only
                 // choice that cannot lose work.
-                copy_file_over(lp, rp);
+                store_write(repoDir, store, rel, lit->second);
                 next[rel] = lh;
                 ++stats.toRepo;
                 log.push_back("kept locally-edited file the remote deleted: " + rel);
                 continue;
             }
-            copy_file_over(lp, rp);
+            store_write(repoDir, store, rel, lit->second);
             next[rel] = lh;
             ++stats.toRepo;
             continue;
@@ -125,18 +136,18 @@ SyncStats sync_dir(const fs::path& localDir, const fs::path& repoDir, FileSet& b
         if (!hasL && hasR) {
             if (hasB) {
                 if (rh == bh) {
-                    remove_and_prune(rp, repoDir);
+                    store_remove(repoDir, store, rel);
                     ++stats.deletedRepo;
                     log.push_back("deleted from repo: " + rel);
                     continue;
                 }
-                copy_file_over(rp, lp);
+                write_atomic(localDir / rel, rit->second);
                 next[rel] = rh;
                 ++stats.toLocal;
                 log.push_back("kept remotely-edited file deleted here: " + rel);
                 continue;
             }
-            copy_file_over(rp, lp);
+            write_atomic(localDir / rel, rit->second);
             next[rel] = rh;
             ++stats.toLocal;
             continue;
@@ -152,13 +163,13 @@ SyncStats sync_dir(const fs::path& localDir, const fs::path& repoDir, FileSet& b
         bool repoChanged = !hasB || rh != bh;
 
         if (localChanged && !repoChanged) {
-            copy_file_over(lp, rp);
+            store_write(repoDir, store, rel, lit->second);
             next[rel] = lh;
             ++stats.toRepo;
             continue;
         }
         if (!localChanged && repoChanged) {
-            copy_file_over(rp, lp);
+            write_atomic(localDir / rel, rit->second);
             next[rel] = rh;
             ++stats.toLocal;
             continue;
@@ -168,23 +179,30 @@ SyncStats sync_dir(const fs::path& localDir, const fs::path& repoDir, FileSet& b
         // it, because the one thing worse than a conflict file is a silently
         // discarded memory.
         //
-        // MEMORY.md is the file this actually happens to, and a union merge is
-        // the right answer for it rather than picking a winner at all. That is
-        // the merge driver, which lands in step 3 and takes over this case.
-        bool localWins = mtime_seconds(lp) >= mtime_seconds(rp);
-        const fs::path& winner = localWins ? lp : rp;
-        const fs::path& loser = localWins ? rp : lp;
+        // MEMORY.md is the file this actually happens to, and the git merge
+        // driver unions it properly when the collision happens at the git
+        // level. This branch is the mirror-level fallback, where only one side
+        // has a real mtime to compare.
+        bool localWins = true;
+        {
+            std::error_code ec;
+            fs::path lp = localDir / rel;
+            fs::path rp = store.file_for(repoDir, rel);
+            if (fs::is_regular_file(lp, ec) && fs::is_regular_file(rp, ec)) {
+                localWins = mtime_seconds(lp) >= mtime_seconds(rp);
+            }
+        }
 
-        std::string winning = read_file(winner);
-        std::string losing = read_file(loser);
+        const std::string& winning = localWins ? lit->second : rit->second;
+        const std::string& losing = localWins ? rit->second : lit->second;
 
         std::string cname = conflict_name(rel, machine);
         write_atomic(localDir / cname, losing);
-        write_atomic(repoDir / cname, losing);
+        store_write(repoDir, store, cname, losing);
         next[cname] = hash_bytes(losing);
 
-        write_atomic(lp, winning);
-        write_atomic(rp, winning);
+        write_atomic(localDir / rel, winning);
+        store_write(repoDir, store, rel, winning);
         next[rel] = hash_bytes(winning);
 
         ++stats.conflicts;

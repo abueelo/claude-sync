@@ -7,6 +7,7 @@
 #include "paths.h"
 #include "project.h"
 #include "repo.h"
+#include "store.h"
 
 namespace claude_sync {
 namespace {
@@ -15,15 +16,15 @@ namespace {
 // sync repo rather than under any project id.
 struct GlobalPair {
     fs::path local;
-    fs::path repo;
+    std::string key;  // logical path; the store decides where that lands
     bool enabled;
 };
 
-std::vector<GlobalPair> global_pairs(const Config& c, const fs::path& repo) {
+std::vector<GlobalPair> global_pairs(const Config& c) {
     return {
-        {claude_dir() / "skills", repo / "global" / "skills", c.scope.skills},
-        {claude_dir() / "agents", repo / "global" / "agents", c.scope.agents},
-        {claude_dir() / "commands", repo / "global" / "commands", c.scope.commands},
+        {claude_dir() / "skills", "global/skills", c.scope.skills},
+        {claude_dir() / "agents", "global/agents", c.scope.agents},
+        {claude_dir() / "commands", "global/commands", c.scope.commands},
     };
 }
 
@@ -50,55 +51,70 @@ std::string commit_message(const SyncStats& s, const std::string& machine,
     return where + ": " + what + " from " + machine + ", " + now_iso8601().substr(0, 10);
 }
 
-// Reconciles the global CLAUDE.md, which is one file rather than a directory.
-void sync_global_claude_md(const fs::path& repo, State& state, SyncReport& report) {
-    fs::path lp = claude_dir() / "CLAUDE.md";
-    fs::path rp = repo / "global" / "CLAUDE.md";
+// Reconciles the global CLAUDE.md. It is one file rather than a directory, and
+// its local side sits directly in ~/.claude alongside everything else, so it
+// gets its own repo directory instead of going through sync_dir.
+void sync_global_claude_md(const fs::path& repo, const Store& base, State& state,
+                           SyncReport& report) {
+    const std::string kKey = "global/CLAUDE.md";
 
-    FileSet baseline = state.baseline.count("global/CLAUDE.md") ? state.baseline["global/CLAUDE.md"]
-                                                               : FileSet{};
+    Store store = base;
+    store.prefix = kKey;
+
+    fs::path lp = claude_dir() / "CLAUDE.md";
+    fs::path repoDir = store.dir_for(repo, "global/claude-md");
+
+    FileSet baseline = state.baseline.count(kKey) ? state.baseline[kKey] : FileSet{};
 
     std::error_code ec;
     bool hasL = fs::is_regular_file(lp, ec);
-    bool hasR = fs::is_regular_file(rp, ec);
+
+    std::map<std::string, std::string> repoSide = store_read_all(repoDir, store);
+    auto rit = repoSide.find("CLAUDE.md");
+    bool hasR = rit != repoSide.end();
+
     if (!hasL && !hasR) {
-        state.baseline["global/CLAUDE.md"] = FileSet{};
+        state.baseline[kKey] = FileSet{};
         return;
     }
 
-    std::string lh = hasL ? content_hash(lp) : std::string{};
-    std::string rh = hasR ? content_hash(rp) : std::string{};
+    std::string localText = hasL ? read_file(lp) : std::string{};
+    std::string lh = hasL ? hash_bytes(localText) : std::string{};
+    std::string rh = hasR ? hash_bytes(rit->second) : std::string{};
 
     if (lh == rh) {
         baseline["CLAUDE.md"] = lh;
-        state.baseline["global/CLAUDE.md"] = baseline;
+        state.baseline[kKey] = baseline;
         return;
     }
 
     if (hasL && !hasR) {
-        copy_file_over(lp, rp);
+        store_write(repoDir, store, "CLAUDE.md", localText);
         ++report.stats.toRepo;
+        baseline["CLAUDE.md"] = lh;
     } else if (!hasL && hasR) {
-        copy_file_over(rp, lp);
+        write_atomic(lp, rit->second);
         ++report.stats.toLocal;
-    } else if (mtime_seconds(rp) > mtime_seconds(lp)) {
-        copy_file_over(rp, lp);
+        baseline["CLAUDE.md"] = rh;
+    } else if (mtime_seconds(store.file_for(repoDir, "CLAUDE.md")) > mtime_seconds(lp)) {
+        write_atomic(lp, rit->second);
         ++report.stats.toLocal;
         report.log.push_back("global: took the newer CLAUDE.md from the repo");
+        baseline["CLAUDE.md"] = rh;
     } else {
-        copy_file_over(lp, rp);
+        store_write(repoDir, store, "CLAUDE.md", localText);
         ++report.stats.toRepo;
+        baseline["CLAUDE.md"] = lh;
     }
 
-    baseline["CLAUDE.md"] = content_hash(lp);
-    state.baseline["global/CLAUDE.md"] = baseline;
+    state.baseline[kKey] = baseline;
 }
 
 // One reconciliation pass over every project plus the global material. Runs
 // again after a rebase, since integrating another device's commits leaves the
 // repo holding files the local memory dir has not seen.
-SyncStats reconcile(const Config& c, const fs::path& repo, State& state, Manifest& manifest,
-                    const std::vector<Project>& projects, SyncReport& report,
+SyncStats reconcile(const Config& c, const fs::path& repo, const Store& base, State& state,
+                    Manifest& manifest, const std::vector<Project>& projects, SyncReport& report,
                     std::vector<std::string>& touched) {
     SyncStats total;
 
@@ -120,13 +136,16 @@ SyncStats reconcile(const Config& c, const fs::path& repo, State& state, Manifes
         Entry* known = manifest.find_by_id(p.id);
         std::string entryId = known ? known->id : p.id;
 
-        fs::path localMem = projects_dir() / p.escapedDir / "memory";
-        fs::path repoMem = repo / "projects" / entryId / "memory";
-
         FileSet baseline = state.baseline.count(entryId) ? state.baseline[entryId] : FileSet{};
 
+        Store store = base;
+        store.prefix = "projects/" + entryId + "/memory";
+
+        fs::path localMem = projects_dir() / p.escapedDir / "memory";
+        fs::path repoMem = store.dir_for(repo, store.prefix);
+
         std::vector<std::string> plog;
-        SyncStats s = sync_dir(localMem, repoMem, baseline, c.machineName, plog);
+        SyncStats s = sync_dir(localMem, repoMem, store, baseline, c.machineName, plog);
 
         state.baseline[entryId] = std::move(baseline);
         total.add(s);
@@ -142,25 +161,29 @@ SyncStats reconcile(const Config& c, const fs::path& repo, State& state, Manifes
         }
     }
 
-    if (c.scope.globalClaudeMd) sync_global_claude_md(repo, state, report);
+    if (c.scope.globalClaudeMd) sync_global_claude_md(repo, base, state, report);
 
-    for (const auto& g : global_pairs(c, repo)) {
+    for (const auto& g : global_pairs(c)) {
         if (!g.enabled) continue;
-        std::error_code ec;
-        if (!fs::is_directory(g.local, ec) && !fs::is_directory(g.repo, ec)) continue;
 
-        std::string key = "global/" + g.local.filename().string();
-        FileSet baseline = state.baseline.count(key) ? state.baseline[key] : FileSet{};
+        Store store = base;
+        store.prefix = g.key;
+        fs::path repoDir = store.dir_for(repo, g.key);
+
+        std::error_code ec;
+        if (!fs::is_directory(g.local, ec) && !fs::is_directory(repoDir, ec)) continue;
+
+        FileSet baseline = state.baseline.count(g.key) ? state.baseline[g.key] : FileSet{};
 
         std::vector<std::string> glog;
-        SyncStats s = sync_dir(g.local, g.repo, baseline, c.machineName, glog);
+        SyncStats s = sync_dir(g.local, repoDir, store, baseline, c.machineName, glog);
 
-        state.baseline[key] = std::move(baseline);
+        state.baseline[g.key] = std::move(baseline);
         total.add(s);
-        for (const auto& line : glog) report.log.push_back(key + ": " + line);
+        for (const auto& line : glog) report.log.push_back(g.key + ": " + line);
     }
 
-    manifest.save(repo);
+    manifest.save(repo, base);
     return total;
 }
 
@@ -185,7 +208,24 @@ SyncReport run_sync(const SyncOptions& opts) {
 
     fs::path repo = repo_path();
 
-    if (opts.fetch && !repo_pull(err)) {
+    // The store decides whether the repo side is plain files or sealed ones.
+    // Everything downstream is written against it rather than against a mode
+    // flag, so the two paths cannot drift apart.
+    Store base;
+    base.encrypted = c.encrypted;
+    if (c.encrypted) {
+        if (!load_keys(sync_dir_path(), base.keys)) {
+            // Falling back to plaintext here would silently publish every
+            // memory the user asked to have encrypted. Refusing is the only
+            // safe answer.
+            report.errors.push_back(
+                "this repo is encrypted but no key is cached on this machine; "
+                "run 'claude-sync unlock' once to enter the password");
+            return report;
+        }
+    }
+
+    if (opts.fetch && !repo_pull(base, err)) {
         // Reconciling against a stale checkout would push work that silently
         // reverts another device, so a failed fetch stops the run here.
         report.errors.push_back(err);
@@ -193,11 +233,11 @@ SyncReport run_sync(const SyncOptions& opts) {
     }
 
     State state = load_state();
-    Manifest manifest = Manifest::load(repo);
+    Manifest manifest = Manifest::load(repo, base);
     std::vector<Project> projects = scan_all();
     std::vector<std::string> touched;
 
-    report.stats.add(reconcile(c, repo, state, manifest, projects, report, touched));
+    report.stats.add(reconcile(c, repo, base, state, manifest, projects, report, touched));
     for (const auto& p : projects) {
         if (p.synced()) ++report.projectsSynced;
     }
@@ -211,8 +251,8 @@ SyncReport run_sync(const SyncOptions& opts) {
     }
 
     PushResult push;
-    if (!repo_commit_and_push(commit_message(report.stats, c.machineName, touched), opts.push, err,
-                              &push)) {
+    if (!repo_commit_and_push(commit_message(report.stats, c.machineName, touched), opts.push, base,
+                              err, &push)) {
         report.errors.push_back(err);
         // The working tree is already reconciled, so the baseline still has to
         // be recorded or the next run would redo everything as if new.
@@ -226,14 +266,14 @@ SyncReport run_sync(const SyncOptions& opts) {
         // sidecar the merge driver wrote. Neither has reached ~/.claude yet.
         report.log.push_back("integrated another device's changes mid-push, reconciling again");
 
-        manifest = Manifest::load(repo);
-        SyncStats second = reconcile(c, repo, state, manifest, projects, report, touched);
+        manifest = Manifest::load(repo, base);
+        SyncStats second = reconcile(c, repo, base, state, manifest, projects, report, touched);
         report.stats.add(second);
 
         if (second.changed()) {
             PushResult again;
             if (!repo_commit_and_push(commit_message(second, c.machineName, touched), opts.push,
-                                      err, &again)) {
+                                      base, err, &again)) {
                 report.errors.push_back(err);
                 save_state(state);
                 return report;

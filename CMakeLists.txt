@@ -12,6 +12,9 @@ endif()
 add_library(claude_sync_core STATIC
   third_party/monocypher.c
   src/crypt.cpp
+  src/store.cpp
+  src/password.cpp
+  src/setup.cpp
   src/git.cpp
   src/paths.cpp
   src/project.cpp

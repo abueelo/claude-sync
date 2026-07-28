@@ -34,8 +34,17 @@ std::string strip_remote_prefix(const std::string& id) {
 
 }  // namespace
 
-Manifest Manifest::load(const fs::path& repo) {
-    return parse(read_file(repo / "manifest.json"));
+std::string Manifest::filename(const Store& store) {
+    return store.encrypted ? "manifest.bin" : "manifest.json";
+}
+
+Manifest Manifest::load(const fs::path& repo, const Store& store) {
+    std::string raw = read_file(repo / filename(store));
+    if (raw.empty()) return Manifest{};
+
+    std::string text;
+    if (!store_open_blob(store, raw, text)) return Manifest{};
+    return parse(text);
 }
 
 Manifest Manifest::parse(const std::string& text) {
@@ -77,7 +86,7 @@ Manifest Manifest::parse(const std::string& text) {
     return m;
 }
 
-bool Manifest::save(const fs::path& repo) const {
+bool Manifest::save(const fs::path& repo, const Store& store) const {
     json entries = json::object();
     for (const auto& e : entries_) {
         json j;
@@ -94,7 +103,8 @@ bool Manifest::save(const fs::path& repo) const {
     j["version"] = 1;
     j["entries"] = entries;
 
-    return write_atomic(repo / "manifest.json", j.dump(2) + "\n");
+    std::string text = j.dump(2) + "\n";
+    return write_atomic(repo / filename(store), store_seal_blob(store, "manifest", text));
 }
 
 Entry* Manifest::find_by_id(const std::string& id) {

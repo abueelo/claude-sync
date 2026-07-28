@@ -51,6 +51,7 @@ Config load_config() {
 
     c.machineName = j.value("machineName", c.machineName);
     c.remoteUrl = j.value("remoteUrl", std::string{});
+    c.encrypted = j.value("encrypted", false);
 
     if (j.contains("scope") && j["scope"].is_object()) {
         const auto& s = j["scope"];
@@ -74,6 +75,7 @@ bool save_config(const Config& c) {
     json j;
     j["machineName"] = c.machineName;
     j["remoteUrl"] = c.remoteUrl;
+    j["encrypted"] = c.encrypted;
     j["scope"] = {{"memory", c.scope.memory},
                   {"globalClaudeMd", c.scope.globalClaudeMd},
                   {"skills", c.scope.skills},

@@ -3,6 +3,7 @@
 #include <string>
 
 #include "config.h"
+#include "store.h"
 
 namespace claude_sync {
 
@@ -17,7 +18,7 @@ bool ensure_repo(const Config& c, std::string& err);
 
 // Fetches and fast-forwards. A repo with no upstream commits yet is a success
 // with nothing to do.
-bool repo_pull(std::string& err);
+bool repo_pull(const Store& store, std::string& err);
 
 struct PushResult {
     bool committed = false;
@@ -32,14 +33,14 @@ struct PushResult {
 
 // Stages everything, commits if anything is staged, and pushes. Retries once
 // through a rebase if the push races another device.
-bool repo_commit_and_push(const std::string& message, bool doPush, std::string& err,
-                          PushResult* result = nullptr);
+bool repo_commit_and_push(const std::string& message, bool doPush, const Store& store,
+                          std::string& err, PushResult* result = nullptr);
 
 std::string current_branch();
 
 // Resolves a conflicted manifest.json by unioning both sides and staging it.
 // False if anything other than the manifest is unresolved.
-bool resolve_manifest_conflict();
+bool resolve_manifest_conflict(const Store& store);
 
 // Writes .gitattributes and points merge.claude-memory.driver at this binary.
 //

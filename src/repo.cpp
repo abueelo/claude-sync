@@ -17,7 +17,7 @@ namespace {
 // True when manifest.json is the only thing git could not merge. Anything else
 // unresolved means the memory files themselves collided, which is not this
 // function's problem.
-bool only_manifest_conflicted() {
+bool only_manifest_conflicted(const std::string& manifestName) {
     auto r = run_git(repo_path(), {"diff", "--name-only", "--diff-filter=U"});
     if (!r.ok() || r.out.empty()) return false;
 
@@ -27,7 +27,7 @@ bool only_manifest_conflicted() {
     while (std::getline(in, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
         if (line.empty()) continue;
-        if (line != "manifest.json") return false;
+        if (line != manifestName) return false;
         sawManifest = true;
     }
     return sawManifest;
@@ -42,16 +42,26 @@ std::string stage(const std::string& ref) {
 
 // Replaces a conflicted manifest.json with the union of both sides. Returns
 // false if the conflict was anything else, leaving the merge untouched.
-bool resolve_manifest_conflict() {
-    if (!only_manifest_conflicted()) return false;
+bool resolve_manifest_conflict(const Store& store) {
+    std::string name = Manifest::filename(store);
+    if (!only_manifest_conflicted(name)) return false;
 
-    Manifest ours = Manifest::parse(stage(":2:manifest.json"));
-    Manifest theirs = Manifest::parse(stage(":3:manifest.json"));
+    // Both stages are sealed in an encrypted repo, so they have to be opened
+    // before there is anything to union.
+    auto load_stage = [&](const char* which) {
+        std::string raw = stage(std::string(which) + ":" + name);
+        std::string text;
+        if (!store_open_blob(store, raw, text)) return Manifest{};
+        return Manifest::parse(text);
+    };
+
+    Manifest ours = load_stage(":2");
+    Manifest theirs = load_stage(":3");
     ours.merge_from(theirs);
 
-    if (!ours.save(repo_path())) return false;
+    if (!ours.save(repo_path(), store)) return false;
 
-    auto add = run_git(repo_path(), {"add", "manifest.json"});
+    auto add = run_git(repo_path(), {"add", name});
     return add.ok();
 }
 
@@ -106,7 +116,7 @@ bool ensure_repo(const Config& c, std::string& err) {
     return true;
 }
 
-bool repo_pull(std::string& err) {
+bool repo_pull(const Store& store, std::string& err) {
     auto fetch = run_git(repo_path(), {"fetch", "--quiet", "origin"});
     if (!fetch.ok()) {
         err = "fetch failed: " + (fetch.err.empty() ? fetch.out : fetch.err);
@@ -133,7 +143,7 @@ bool repo_pull(std::string& err) {
     auto merge = run_git(repo_path(), {"merge", "--no-edit", "origin/" + branch});
     if (merge.ok()) return true;
 
-    if (resolve_manifest_conflict()) {
+    if (resolve_manifest_conflict(store)) {
         auto finish = run_git(repo_path(), {"commit", "--no-edit", "--quiet"});
         if (finish.ok()) return true;
     }
@@ -145,8 +155,8 @@ bool repo_pull(std::string& err) {
     return false;
 }
 
-bool repo_commit_and_push(const std::string& message, bool doPush, std::string& err,
-                          PushResult* result) {
+bool repo_commit_and_push(const std::string& message, bool doPush, const Store& store,
+                          std::string& err, PushResult* result) {
     PushResult local;
     PushResult& out = result ? *result : local;
     out = PushResult{};
@@ -185,7 +195,7 @@ bool repo_commit_and_push(const std::string& message, bool doPush, std::string& 
 
         // The same manifest collision can surface here, where the race is most
         // likely to happen in the first place.
-        if (!rebase.ok() && resolve_manifest_conflict()) {
+        if (!rebase.ok() && resolve_manifest_conflict(store)) {
             rebase = run_git(repo_path(), {"-c", "core.editor=true", "rebase", "--continue"});
         }
 
@@ -229,7 +239,10 @@ bool install_merge_driver() {
         "# Memory files are merged by claude-sync, not by line-based diff.\n"
         "MEMORY.md merge=claude-memory\n"
         "*.md merge=claude-memory\n"
-        "manifest.json merge=binary\n";
+        "*.bin merge=claude-memory -diff\n"
+        "manifest.json merge=binary\n"
+        "manifest.bin merge=binary -diff\n"
+        "crypt.json merge=binary\n";
 
     fs::path attrPath = repo / ".gitattributes";
     if (read_file(attrPath) != attributes) {

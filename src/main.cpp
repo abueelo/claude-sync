@@ -7,7 +7,11 @@
 #include "git.h"
 #include "json.hpp"
 #include "paths.h"
+#include "crypt.h"
 #include "merge.h"
+#include "password.h"
+#include "setup.h"
+#include "store.h"
 #include "project.h"
 #include "repo.h"
 #include "sync.h"
@@ -26,6 +30,7 @@ void print_usage() {
                  "  claude-sync pull                  take what other devices pushed\n"
                  "  claude-sync push                  publish what changed here\n"
                  "  claude-sync sync [--dry-run]      pull then push\n"
+                 "  claude-sync unlock          cache the key on this device\n"
                  "  claude-sync mergetool ...         git merge driver, called by git\n"
                  "  claude-sync help\n";
 }
@@ -34,6 +39,7 @@ int cmd_init(const std::vector<std::string>& args) {
     std::string remote;
     std::string createName;
     bool assumeYes = false;
+    EncryptChoice encrypt = EncryptChoice::Ask;
 
     for (size_t i = 0; i < args.size(); ++i) {
         if (args[i] == "--remote" && i + 1 < args.size()) {
@@ -42,6 +48,10 @@ int cmd_init(const std::vector<std::string>& args) {
             createName = args[++i];
         } else if (args[i] == "--yes" || args[i] == "-y") {
             assumeYes = true;
+        } else if (args[i] == "--encrypt") {
+            encrypt = EncryptChoice::Yes;
+        } else if (args[i] == "--no-encrypt") {
+            encrypt = EncryptChoice::No;
         } else {
             std::cerr << "claude-sync init: unknown argument '" << args[i] << "'\n";
             return 2;
@@ -84,9 +94,41 @@ int cmd_init(const std::vector<std::string>& args) {
     std::cout << (existed ? "updated " : "created ") << (sync_dir_path() / "config.json") << "\n";
     std::cout << "machine: " << c.machineName << "\n";
     std::cout << "remote:  " << (c.remoteUrl.empty() ? "(none set)" : c.remoteUrl) << "\n";
+
     if (c.remoteUrl.empty()) {
         std::cout << "\nNo sync remote yet. Nothing is pushed or fetched until one is set.\n";
+        return 0;
     }
+
+    // Encryption is decided against the actual repo, because a repo that
+    // another device already encrypted has to be matched, not overruled.
+    std::string err;
+    if (!setup_encryption(c, err, encrypt)) {
+        std::cerr << "claude-sync: " << err << "\n";
+        return 1;
+    }
+    save_config(c);
+    return 0;
+}
+
+int cmd_unlock(const std::vector<std::string>& args) {
+    if (!args.empty()) {
+        std::cerr << "claude-sync unlock: takes no arguments\n";
+        return 2;
+    }
+    if (!config_exists()) {
+        std::cerr << "claude-sync: not set up yet; run 'claude-sync init --remote <url>'\n";
+        return 1;
+    }
+
+    Config c = load_config();
+    std::string err;
+    if (!unlock(c, err)) {
+        std::cerr << "claude-sync: " << err << "\n";
+        return 1;
+    }
+    save_config(c);
+    std::cout << "Unlocked on this device.\n";
     return 0;
 }
 
@@ -193,12 +235,49 @@ int cmd_mergetool(const std::vector<std::string>& args) {
 
     if (ours == theirs) return 0;
 
-    std::string name = fs::path(worktreePath).filename().string();
+    Config c = load_config();
+    std::string machine = c.machineName.empty() ? "other-device" : c.machineName;
+
+    // In an encrypted repo the filename on disk is a keyed hash, so the only
+    // way to know what this file is called -- and therefore whether it is the
+    // MEMORY.md index that wants a union merge -- is to open it. The real name
+    // travels sealed inside the blob for exactly this reason.
+    Store store;
+    std::string sealedName;  // logical path recovered from the envelope
+
+    if (c.encrypted && load_keys(sync_dir_path(), store.keys)) {
+        store.encrypted = true;
+
+        std::string oursPlain, theirsPlain, basePlain;
+        std::string oursName, theirsName, baseName;
+
+        if (open_sealed(store.keys, ours, oursName, oursPlain) &&
+            open_sealed(store.keys, theirs, theirsName, theirsPlain)) {
+            // The base is absent when both sides added the file independently.
+            if (!open_sealed(store.keys, base, baseName, basePlain)) basePlain.clear();
+
+            ours = oursPlain;
+            theirs = theirsPlain;
+            base = basePlain;
+            sealedName = oursName;
+        } else {
+            // Undecryptable input: leave the conflict for a human rather than
+            // writing something that claims to be a merge.
+            return 1;
+        }
+    }
+
+    std::string logical = !sealedName.empty() ? sealedName : worktreePath;
+    std::string name = fs::path(logical).filename().string();
     if (name.empty()) name = oursPath.filename().string();
 
+    auto write_result = [&](const std::string& plain) {
+        std::string out = store.encrypted ? seal(store.keys, logical, plain) : plain;
+        return write_atomic(oursPath, out) ? 0 : 1;
+    };
+
     if (name == "MEMORY.md") {
-        std::string merged = merge_memory_index(base, ours, theirs);
-        return write_atomic(oursPath, merged) ? 0 : 1;
+        return write_result(merge_memory_index(base, ours, theirs));
     }
 
     // Any other memory file. The two temp files git hands over carry no useful
@@ -206,18 +285,25 @@ int cmd_mergetool(const std::vector<std::string>& args) {
     // mirror -- keep ours and park theirs beside it in the worktree instead.
     // Resolving rather than conflicting is what keeps a hook from ever wedging
     // the repo mid-merge.
-    Config c = load_config();
-    std::string machine = c.machineName.empty() ? "other-device" : c.machineName;
-
-    fs::path rel(worktreePath.empty() ? name : worktreePath);
+    fs::path rel(logical.empty() ? name : logical);
     std::string stem = rel.stem().string();
     std::string ext = rel.extension().string();
     fs::path parent = rel.parent_path();
-    fs::path conflict = parent / (stem + ".conflict-" + machine + ext);
+    std::string conflictLogical =
+        (parent.empty() ? fs::path(stem + ".conflict-" + machine + ext)
+                        : parent / (stem + ".conflict-" + machine + ext))
+            .generic_string();
 
-    // cwd during a merge driver is the top of the worktree.
-    write_atomic(conflict, theirs);
-    return 0;
+    // cwd during a merge driver is the top of the worktree. An encrypted repo
+    // stores the sidecar under a hashed name like everything else.
+    fs::path conflictFile = store.encrypted
+                                ? fs::path(hash_path(store.keys, conflictLogical) + ".bin")
+                                : fs::path(conflictLogical);
+    std::string sidecar =
+        store.encrypted ? seal(store.keys, conflictLogical, theirs) : theirs;
+
+    write_atomic(conflictFile, sidecar);
+    return write_result(ours);
 }
 
 int cmd_sync(const std::vector<std::string>& args, bool fetch, bool push) {
@@ -260,6 +346,7 @@ int main(int argc, char** argv) {
     if (cmd == "push") return cmd_sync(rest, /*fetch=*/false, /*push=*/true);
     if (cmd == "sync") return cmd_sync(rest, /*fetch=*/true, /*push=*/true);
     if (cmd == "mergetool") return cmd_mergetool(rest);
+    if (cmd == "unlock") return cmd_unlock(rest);
 
     std::cerr << "claude-sync: unknown command '" << cmd << "'\n\n";
     print_usage();

@@ -19,6 +19,7 @@ struct Scope {
 struct Config {
     std::string machineName;
     std::string remoteUrl;
+    bool encrypted = false;
     Scope scope;
     std::vector<std::string> exclude;
 };
