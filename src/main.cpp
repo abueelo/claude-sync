@@ -7,6 +7,7 @@
 #include "git.h"
 #include "json.hpp"
 #include "paths.h"
+#include "merge.h"
 #include "project.h"
 #include "repo.h"
 #include "sync.h"
@@ -25,6 +26,7 @@ void print_usage() {
                  "  csync pull                  take what other devices pushed\n"
                  "  csync push                  publish what changed here\n"
                  "  csync sync [--dry-run]      pull then push\n"
+                 "  csync mergetool ...         git merge driver, called by git\n"
                  "  csync help\n";
 }
 
@@ -171,6 +173,53 @@ int report_sync(const SyncReport& r) {
     return 0;
 }
 
+// Git's merge driver contract: read the three versions, write the result over
+// %A, exit 0 if resolved and non-zero to leave a conflict. Called by git during
+// a merge, never by a person.
+int cmd_mergetool(const std::vector<std::string>& args) {
+    if (args.size() < 3) {
+        std::cerr << "usage: csync mergetool %O %A %B [%P]\n";
+        return 2;
+    }
+
+    fs::path basePath = args[0];
+    fs::path oursPath = args[1];
+    fs::path theirsPath = args[2];
+    std::string worktreePath = args.size() > 3 ? args[3] : std::string{};
+
+    std::string base = read_file(basePath);
+    std::string ours = read_file(oursPath);
+    std::string theirs = read_file(theirsPath);
+
+    if (ours == theirs) return 0;
+
+    std::string name = fs::path(worktreePath).filename().string();
+    if (name.empty()) name = oursPath.filename().string();
+
+    if (name == "MEMORY.md") {
+        std::string merged = merge_memory_index(base, ours, theirs);
+        return write_atomic(oursPath, merged) ? 0 : 1;
+    }
+
+    // Any other memory file. The two temp files git hands over carry no useful
+    // timestamps, so "newer wins" is not available here the way it is in the
+    // mirror -- keep ours and park theirs beside it in the worktree instead.
+    // Resolving rather than conflicting is what keeps a hook from ever wedging
+    // the repo mid-merge.
+    Config c = load_config();
+    std::string machine = c.machineName.empty() ? "other-device" : c.machineName;
+
+    fs::path rel(worktreePath.empty() ? name : worktreePath);
+    std::string stem = rel.stem().string();
+    std::string ext = rel.extension().string();
+    fs::path parent = rel.parent_path();
+    fs::path conflict = parent / (stem + ".conflict-" + machine + ext);
+
+    // cwd during a merge driver is the top of the worktree.
+    write_atomic(conflict, theirs);
+    return 0;
+}
+
 int cmd_sync(const std::vector<std::string>& args, bool fetch, bool push) {
     SyncOptions opts;
     opts.fetch = fetch;
@@ -210,6 +259,7 @@ int main(int argc, char** argv) {
     if (cmd == "pull") return cmd_sync(rest, /*fetch=*/true, /*push=*/false);
     if (cmd == "push") return cmd_sync(rest, /*fetch=*/false, /*push=*/true);
     if (cmd == "sync") return cmd_sync(rest, /*fetch=*/true, /*push=*/true);
+    if (cmd == "mergetool") return cmd_mergetool(rest);
 
     std::cerr << "csync: unknown command '" << cmd << "'\n\n";
     print_usage();

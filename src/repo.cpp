@@ -1,5 +1,10 @@
 #include "repo.h"
 
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+
+#include <cstdint>
 #include <sstream>
 
 #include "git.h"
@@ -65,7 +70,12 @@ std::string current_branch() {
 }
 
 bool ensure_repo(const Config& c, std::string& err) {
-    if (repo_exists()) return true;
+    if (repo_exists()) {
+        // Cheap and re-run every time, because the driver config is local to the
+        // clone and silently stops working if the binary is moved or reinstalled.
+        install_merge_driver();
+        return true;
+    }
 
     if (c.remoteUrl.empty()) {
         err = "no sync remote configured; run 'csync init --remote <url>'";
@@ -92,6 +102,7 @@ bool ensure_repo(const Config& c, std::string& err) {
         run_git(repo_path(), {"checkout", "-q", "-b", "main"});
     }
 
+    install_merge_driver();
     return true;
 }
 
@@ -135,8 +146,10 @@ bool repo_pull(std::string& err) {
 }
 
 bool repo_commit_and_push(const std::string& message, bool doPush, std::string& err,
-                          bool* committed) {
-    if (committed) *committed = false;
+                          PushResult* result) {
+    PushResult local;
+    PushResult& out = result ? *result : local;
+    out = PushResult{};
 
     auto add = run_git(repo_path(), {"add", "-A"});
     if (!add.ok()) {
@@ -153,7 +166,7 @@ bool repo_commit_and_push(const std::string& message, bool doPush, std::string& 
             err = "commit failed: " + (commit.err.empty() ? commit.out : commit.err);
             return false;
         }
-        if (committed) *committed = true;
+        out.committed = true;
     }
 
     if (!doPush) return true;
@@ -177,6 +190,7 @@ bool repo_commit_and_push(const std::string& message, bool doPush, std::string& 
         }
 
         if (rebase.ok()) {
+            out.integratedRemote = true;
             auto retry = run_git(repo_path(), {"push", "--quiet", "-u", "origin", branch});
             if (retry.ok()) return true;
             err = "push failed after rebase: " + (retry.err.empty() ? retry.out : retry.err);
@@ -187,6 +201,53 @@ bool repo_commit_and_push(const std::string& message, bool doPush, std::string& 
 
     err = "push failed: " + (push.err.empty() ? push.out : push.err);
     return false;
+}
+
+fs::path self_path() {
+#if defined(__APPLE__)
+    uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    std::string buf(size, '\0');
+    if (_NSGetExecutablePath(&buf[0], &size) != 0) return {};
+    buf.resize(std::char_traits<char>::length(buf.c_str()));
+    std::error_code ec;
+    fs::path resolved = fs::weakly_canonical(fs::path(buf), ec);
+    return ec ? fs::path(buf) : resolved;
+#else
+    std::error_code ec;
+    fs::path p = fs::read_symlink("/proc/self/exe", ec);
+    return ec ? fs::path{} : p;
+#endif
+}
+
+bool install_merge_driver() {
+    fs::path repo = repo_path();
+    std::error_code ec;
+    if (!fs::is_directory(repo / ".git", ec)) return false;
+
+    const std::string attributes =
+        "# Memory files are merged by csync, not by line-based diff.\n"
+        "MEMORY.md merge=claude-memory\n"
+        "*.md merge=claude-memory\n"
+        "manifest.json merge=binary\n";
+
+    fs::path attrPath = repo / ".gitattributes";
+    if (read_file(attrPath) != attributes) {
+        if (!write_atomic(attrPath, attributes)) return false;
+    }
+
+    fs::path self = self_path();
+    if (self.empty()) return false;
+
+    // %O base, %A ours (and the file the result must be written to), %B theirs,
+    // %P the path in the worktree.
+    std::string driver = "'" + self.string() + "' mergetool %O %A %B %P";
+
+    auto set = run_git(repo, {"config", "merge.claude-memory.driver", driver});
+    if (!set.ok()) return false;
+
+    run_git(repo, {"config", "merge.claude-memory.name", "csync memory merge"});
+    return true;
 }
 
 bool gh_available() {

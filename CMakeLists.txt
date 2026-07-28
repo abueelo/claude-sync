@@ -16,6 +16,7 @@ add_library(csync_core STATIC
   src/config.cpp
   src/lock.cpp
   src/manifest.cpp
+  src/merge.cpp
   src/mirror.cpp
   src/repo.cpp
   src/sync.cpp
@@ -29,3 +30,7 @@ enable_testing()
 add_executable(normalize_test tests/normalize_test.cpp)
 target_link_libraries(normalize_test PRIVATE csync_core)
 add_test(NAME normalize COMMAND normalize_test)
+
+add_executable(merge_test tests/merge_test.cpp)
+target_link_libraries(merge_test PRIVATE csync_core)
+add_test(NAME merge COMMAND merge_test)
