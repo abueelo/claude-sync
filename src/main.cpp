@@ -354,6 +354,19 @@ int main(int argc, char** argv) {
         return run_hook(rest.empty() ? "unknown" : rest[0]);
     }
 
+    // The most common version of this mistake is an init-only flag typed
+    // without init in front of it -- --remote, --create-remote, --encrypt.
+    // Reconstructing the likely intended command is more useful than making
+    // someone reread the whole usage block to spot a missing subcommand.
+    if (!cmd.empty() && cmd[0] == '-') {
+        std::cerr << "claude-sync: '" << cmd << "' is a flag, not a command.\n";
+        std::cerr << "Did you mean: claude-sync init";
+        for (const auto& a : args) std::cerr << ' ' << a;
+        std::cerr << "\n\n";
+        print_usage();
+        return 2;
+    }
+
     std::cerr << "claude-sync: unknown command '" << cmd << "'\n\n";
     print_usage();
     return 2;
