@@ -6,20 +6,26 @@ It identifies a project by its git remote rather than its local folder path, so 
 
 ## Getting started
 
-### 1. Install the binary
+### 1. Install
 
-**Plugin (recommended):**
+Pick **one** of these — they're alternatives, not steps to do together.
+
+#### Option A: plugin (recommended)
+
+Type this directly into Claude Code, not a terminal:
 
 ```
 /plugin marketplace add abueelo/claude-sync
 /plugin install claude-sync@claude-sync
 ```
 
-This wires up the sync hooks automatically and fetches the right binary for your platform on first use, into its own managed location — nothing for you to place by hand. Skip straight to step 2.
+This wires up the sync hooks and fetches the right binary for your platform automatically on next session start. You don't download or place anything yourself. Skip to step 2.
 
-**Download a release binary:**
+#### Option B: manual
 
-Grab the asset for your platform from the [latest release](https://github.com/abueelo/claude-sync/releases/latest) — `claude-sync-macos-universal`, `claude-sync-linux-x86_64`, or `claude-sync-linux-arm64` — then put it somewhere on your `PATH`:
+Get the `claude-sync` binary onto your machine yourself, then wire up hooks by hand in step 3. Two ways to get the binary — pick one:
+
+**Download a prebuilt release:**
 
 ```
 curl -fsSL -o claude-sync https://github.com/abueelo/claude-sync/releases/latest/download/claude-sync-macos-universal
@@ -27,9 +33,9 @@ chmod +x claude-sync
 sudo mv claude-sync /usr/local/bin/claude-sync
 ```
 
-Swap the asset name for your platform. `/usr/local/bin` is on `PATH` by default on macOS and most Linux setups; use `~/.local/bin` instead if you'd rather not need `sudo` (make sure it's on your `PATH`).
+Swap `claude-sync-macos-universal` for `claude-sync-linux-x86_64` or `claude-sync-linux-arm64` if that's your platform. `/usr/local/bin` is on `PATH` by default on macOS and most Linux setups; use `~/.local/bin` instead if you'd rather not need `sudo` (make sure it's on your `PATH`).
 
-**Build from source:**
+**Or build from source:**
 
 ```
 git clone https://github.com/abueelo/claude-sync.git
