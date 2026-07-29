@@ -4,10 +4,14 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - main
+  workflow_dispatch:
 
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -58,8 +62,59 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # Three channels, told apart by ref, not by how the run was triggered --
+      # a manual dispatch against main is still main's code and publishes the
+      # same way a push would. A pushed vX.Y.Z tag is a permanent, pinned
+      # snapshot. Everything else (test, a feature branch, ...) is a
+      # throwaway build under one fixed, obviously-labeled prerelease tag, so
+      # there's always exactly one place to find "the last thing I built"
+      # rather than hunting through run history for artifacts.
+      - name: Decide what this build publishes as
+        id: which
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          short="${SHA:0:7}"
+          today=$(date -u +%Y-%m-%d)
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "make_latest=false" >> "$GITHUB_OUTPUT"
+            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            echo "note=Pinned release ${{ github.ref_name }}." >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref_name }}" = "main" ]; then
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "make_latest=true" >> "$GITHUB_OUTPUT"
+            echo "name=latest (main @ ${short}, ${today})" >> "$GITHUB_OUTPUT"
+            echo "note=Built automatically from the tip of main. This is always the current GitHub \"Latest\" release; it takes priority over any test build regardless of timing." >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=test" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "make_latest=false" >> "$GITHUB_OUTPUT"
+            echo "name=test build (${{ github.ref_name }} @ ${short}, ${today})" >> "$GITHUB_OUTPUT"
+            echo "note=⚠️ Test build from '${{ github.ref_name }}', triggered manually. Marked prerelease on purpose -- it never becomes \"Latest\" no matter how recent it is." >> "$GITHUB_OUTPUT"
+          fi
+
+      # softprops/action-gh-release does not move an existing tag; it only
+      # publishes to whatever the tag currently points at. latest and test are
+      # meant to move to the newest build every time, so the old tag+release
+      # is deleted first and recreated fresh at the current commit. A pinned
+      # vX.Y.Z tag is left alone -- it already points at the right commit,
+      # since pushing it is what triggered this run in the first place.
+      - name: Move the moving tag
+        if: steps.which.outputs.tag == 'latest' || steps.which.outputs.tag == 'test'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete "${{ steps.which.outputs.tag }}" --yes --cleanup-tag || true
+
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          tag_name: ${{ steps.which.outputs.tag }}
+          name: ${{ steps.which.outputs.name }}
+          prerelease: ${{ steps.which.outputs.prerelease }}
+          make_latest: ${{ steps.which.outputs.make_latest }}
+          body: ${{ steps.which.outputs.note }}
           generate_release_notes: true
+          files: dist/*
