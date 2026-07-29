@@ -8,22 +8,18 @@ It identifies a project by its git remote rather than its local folder path, so 
 
 ### 1. Install
 
-Pick **one** of these — they're alternatives, not steps to do together.
-
 #### Option A: plugin (recommended)
-
-Type this directly into Claude Code, not a terminal:
 
 ```
 /plugin marketplace add abueelo/claude-sync
 /plugin install claude-sync@claude-sync
 ```
 
-This wires up the sync hooks and fetches the right binary for your platform automatically on next session start. You don't download or place anything yourself. Skip to step 2.
+Wires up the sync hooks and fetches the right binary for your platform automatically on next session start. Skip to step 2.
 
 #### Option B: manual
 
-Get the `claude-sync` binary onto your machine yourself, then wire up hooks by hand in step 3. Two ways to get the binary — pick one:
+Get the `claude-sync` binary onto your machine, then wire up hooks by hand in step 3.
 
 **Download a prebuilt release:**
 
