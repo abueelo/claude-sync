@@ -32,6 +32,7 @@ void print_usage() {
                  "  claude-sync push                  publish what changed here\n"
                  "  claude-sync sync [--dry-run]      pull then push\n"
                  "  claude-sync unlock          cache the key on this device\n"
+                 "  claude-sync remove [--yes]  remove local state, keeps the remote repo\n"
                  "  claude-sync hook <event>    read hook JSON on stdin, called by Claude Code\n"
                  "  claude-sync mergetool ...         git merge driver, called by git\n"
                  "  claude-sync help\n";
@@ -131,6 +132,45 @@ int cmd_unlock(const std::vector<std::string>& args) {
     }
     save_config(c);
     std::cout << "Unlocked on this device.\n";
+    return 0;
+}
+
+int cmd_remove(const std::vector<std::string>& args) {
+    bool assumeYes = false;
+    for (const auto& a : args) {
+        if (a == "--yes" || a == "-y") {
+            assumeYes = true;
+        } else {
+            std::cerr << "claude-sync remove: unknown argument '" << a << "'\n";
+            return 2;
+        }
+    }
+
+    fs::path dir = sync_dir_path();
+    std::error_code ec;
+    if (!fs::exists(dir, ec)) {
+        std::cout << "Nothing to remove -- claude-sync has no local state.\n";
+        return 0;
+    }
+
+    std::cout << "This removes claude-sync's local state at " << dir << ":\n"
+                 "config, the cached key, the local clone of your sync repo, and logs.\n\n"
+                 "It does not touch your memory files under ~/.claude/projects, and does\n"
+                 "not touch the remote repo -- nothing there changes. Run 'claude-sync init\n"
+                 "--remote <url>' afterward to set up again.\n\n";
+
+    if (!assumeYes && !prompt_yes_no("Remove local claude-sync state?", false)) {
+        std::cout << "Cancelled.\n";
+        return 1;
+    }
+
+    fs::remove_all(dir, ec);
+    if (ec) {
+        std::cerr << "claude-sync: could not remove " << dir << ": " << ec.message() << "\n";
+        return 1;
+    }
+
+    std::cout << "Removed.\n";
     return 0;
 }
 
@@ -349,6 +389,7 @@ int main(int argc, char** argv) {
     if (cmd == "sync") return cmd_sync(rest, /*fetch=*/true, /*push=*/true);
     if (cmd == "mergetool") return cmd_mergetool(rest);
     if (cmd == "unlock") return cmd_unlock(rest);
+    if (cmd == "remove") return cmd_remove(rest);
     if (cmd == "hook") {
         // A hook must never fail: a non-zero exit here blocks a session.
         return run_hook(rest.empty() ? "unknown" : rest[0]);

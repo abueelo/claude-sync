@@ -62,6 +62,7 @@ claude-sync init [--remote URL] [--encrypt|--no-encrypt] [--create-remote NAME]
 claude-sync status [--json]
 claude-sync pull / push / sync [--dry-run]
 claude-sync unlock
+claude-sync remove [--yes]
 claude-sync hook <event>
 ```
 
