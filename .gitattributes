@@ -1,0 +1,7 @@
+# Memory files are merged by claude-sync, not by line-based diff.
+MEMORY.md merge=claude-memory
+*.md merge=claude-memory
+*.bin merge=claude-memory -diff
+manifest.json merge=binary
+manifest.bin merge=binary -diff
+crypt.json merge=binary
