@@ -1,0 +1,2 @@
+- [No AI attribution](no_ai_attribution.md) — never reference Claude/AI in commits, code, or files; strip existing references
+- [Human-toned writing](human_toned_writing.md) — docs and UI copy should be plain and human-sounding, not cheesy or AI-flowery
